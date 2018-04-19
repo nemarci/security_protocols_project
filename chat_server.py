@@ -22,7 +22,7 @@ def accept_incoming_connections():
     while True:
         client, client_address = SERVER.accept()
         print("%s:%s has connected!" % client_address)
-        client.send(bytes("Greetings from the cave!\nNow type your name and press ENTER!", "utf8"))
+        client.send(bytes("Greetings from the server!\nNow type your name and press ENTER!\n", "utf8"))
         addresses[client] = client_address
         "Asynchronous client handling"
         Thread(target=handle_client, args=(client, )).start()
@@ -51,6 +51,7 @@ def handle_client(client):
             client.close()
             "Deleting the data of the client from the storage"
             del clients[client]
+            print("%s has disconnected!" % name)
             broadcast(bytes("%s has left the chat." % name, "utf8"))
             break
 

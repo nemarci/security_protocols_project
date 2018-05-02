@@ -5,6 +5,17 @@ from chat_common import *
 import os
 import sys
 
+
+# Reading cryptographic keys
+kfile = open('server_signing_pubkey.pem', 'r')
+signing_key_str = kfile.read()
+kfile.close()
+server_public_signkey = RSA.importKey(signing_key_str)
+kfile = open('server_encryption_pubkey.pem', 'r')
+encryption_key_str = kfile.read()
+kfile.close()
+server_public_enckey = RSA.importKey(encryption_key_str)
+
 msg_to_send = ""
 messages = []
 
@@ -18,14 +29,32 @@ available_commands = [
     '/quit'
 ]
 
+
+def process_msg_from_server(msg):
+    # getting signature from the end of message
+    sign = msg[-RSA_sign_length:]
+    msg = msg[:-RSA_sign_length]
+    # verify signature
+    rsa_verify(server_public_signkey, msg, sign)
+    # getting timestamp from the end of message
+    ts = msg[-timestamp_length:]
+    msg = msg[:-timestamp_length]
+    # checking timestamp
+    check_timestamp(ts)
+    return msg.decode('utf8')
+        
+
 def receive():
     while True:
         try:
-            msg = client_socket.recv(BUFSIZ).decode("utf8")
+            msg = client_socket.recv(BUFSIZ)
+            msg = process_msg_from_server(msg)
             messages.append(msg)
             print_messages()
         except OSError:
             break
+        except (InvalidTimestampError, WrongSignatureError):
+            break 
 
 def send(msg, event=None):
     msg_parts = msg.split(' ')

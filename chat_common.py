@@ -22,6 +22,8 @@ except Importerror:
 
 from datetime import datetime
 
+rsa_keystring = b'-----BEGIN PUBLIC KEY-----'  # every public key begins with this string
+
 def rsa_enc(key, plaintext):
     cipher = PKCS1_OAEP.new(key)
     return cipher.encrypt(plaintext)
@@ -29,6 +31,8 @@ def rsa_enc(key, plaintext):
 def rsa_dec(key, ciphertext):
     cipher = PKCS1_OAEP.new(key)
     return cipher.decrypt(ciphertext)
+
+RSA_sign_length = 256
 
 def rsa_sign(key, message):
     h = SHA256.new()
@@ -77,7 +81,8 @@ class InvalidTimestampError(ValueError):
     pass
 
 def check_timestamp(ts):
-    difference = timestamp() - read_timestamp(ts)
+    current_ts = round(datetime.timestamp(datetime.now()))
+    difference = current_ts - read_timestamp(ts)
     if difference < 0 or difference > delay_limit:
         raise InvalidTimestampError(difference)
 

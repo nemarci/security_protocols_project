@@ -147,6 +147,9 @@ def list_channel_members(channel, client_t):
     send_to_client(client_t['client'], result) 
 
 def join_channel(channel, client_t):
+    # leave channel before joining another one
+    if client_t['channel'] != None:
+        leave_channel(None, client_t)
     if channel not in channels:
         send_to_client(client_t['client'], 'This channel does not exist!') 
     else:

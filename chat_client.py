@@ -16,6 +16,10 @@ encryption_key_str = kfile.read()
 kfile.close()
 server_public_enckey = RSA.importKey(encryption_key_str)
 
+# Generating own key
+signing_key = RSA.generate(2048)
+signing_key_pubstr = signing_key.publickey().exportKey(format='DER')
+
 msg_to_send = ""
 messages = []
 
@@ -119,6 +123,8 @@ os.system('cls')
 receive_thread = Thread(target=receive)
 receive_thread.start()
 
+# Send public key to server
+client_socket.send(signing_key_pubstr)
 "Client loop -> if there's an input, send it"
 while True:
     msg_to_send = input()

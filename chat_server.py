@@ -50,6 +50,9 @@ def accept_incoming_connections():
 
 "Handle client after connection to the server"
 def handle_client(client):
+    # first message is always the public key
+    client_pubkey_str = client.recv(BUFSIZ)
+    client_pubkey = RSA.import_key(client_pubkey_str)
     name = client.recv(BUFSIZ).decode("utf8") #The user's name
     
     while name in clients:
@@ -70,8 +73,7 @@ def handle_client(client):
         'client': client,
         'name': name,
         'channel': None,
-        'enc_key': None,
-        'sign_key': None
+        'sign_key': client_pubkey
     }
     start_client_loop(client_t)
 

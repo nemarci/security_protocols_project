@@ -3,6 +3,10 @@ from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 from chat_common import *
 
+# Generating cryptographic keys
+signing_key = RSA.generate(2048)
+encryption_key = RSA.generate(2048)
+
 "We can store the user's names and addresses in these containers"
 clients = {}
 addresses = {}
@@ -18,12 +22,19 @@ ADDR = (HOST, PORT)
 SERVER = socket(AF_INET, SOCK_STREAM)
 SERVER.bind(ADDR)
 
+def send_to_client(client, text):
+    b = bytes(text, "utf8")
+    data = b + timestamp()
+    data += rsa_sign(signing_key, data)
+    client.send(data)
+
+
 "Handle client connection"
 def accept_incoming_connections():
     while True:
         client, client_address = SERVER.accept()
         print("%s:%s has connected!" % client_address)
-        client.send(bytes("Greetings from the server!\nNow type /set_name <your name> and press ENTER!\n", "utf8"))
+        send_to_client(client, "Greetings from the server!\nNow type /set_name <your name> and press ENTER!\n")
         addresses[client] = client_address
         "Asynchronous client handling"
         Thread(target=handle_client, args=(client, )).start()
@@ -34,7 +45,7 @@ def handle_client(client):
     
     while name in clients:
         # The name is already taken -> let the user know!
-        client.send(bytes('This name is already taken!\nPlease choose another!', 'utf8'))
+        send_to_client(client, 'This name is already taken!\nPlease choose another!')
         name = client.recv(BUFSIZ).decode("utf8") #The user's new name
     
     clients[client] = name
@@ -73,7 +84,7 @@ def start_client_loop(client_t):
 "Sending a message to every channel members"
 def broadcast(msg, channel, prefix=""):
     for client_t in channel.values():
-        client_t['client'].send(bytes(prefix, "utf8")+msg)
+        send_to_client(client_t['client'], prefix+msg)
 
 def create_channel(channel, client_t):
     if channel in channels:
@@ -101,7 +112,7 @@ def leave_channel(params, client_t):
         del channels[channel_to_check]
     else:
         msg = '%s has left the channel!' % client_t['name']
-        broadcast(bytes(msg, 'utf8'), channels[channel_to_check]['members'])
+        broadcast(msg, 'utf8'), channels[channel_to_check]['members'])
 
 
 def list_channels(params, client_t):
@@ -132,13 +143,13 @@ def join_channel(channel, client_t):
         client_t['channel'] = channel
         client_t['client'].send(bytes('You are now in the channel \"%s\"' % channel, 'utf8'))
         msg = '%s has joined the channel!' % client_t['name']
-        broadcast(bytes(msg, 'utf8'), channels[channel]['members'])
+        broadcast(msg, channels[channel]['members'])
 
 
 def send_message(msg, client_t):
     if client_t['channel'] != None:
         channel = channels[client_t['channel']]
-        broadcast(bytes(msg, 'utf8'), channel['members'], '%s: ' % client_t['name'])
+        broadcast(msg, channel['members'], '%s: ' % client_t['name'])
     else:
         client_t['client'].send(bytes('You have to be in a channel to access this function!', 'utf8'))
 

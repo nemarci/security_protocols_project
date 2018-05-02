@@ -68,6 +68,10 @@ def decode_msg(msg):
     return msg
 
 
+## Generate cryptographic keys
+
+key = RSA.generate(2048)
+
 
 "Application startup requires the user to type in the server's address and port"
 # HOST = input('Enter host: ')

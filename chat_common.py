@@ -22,6 +22,7 @@ except Importerror:
 
 from datetime import datetime
 
+rsa_keylength = 4096
 rsa_keystring = b'-----BEGIN PUBLIC KEY-----'  # every public key begins with this string
 
 def rsa_enc(key, plaintext):

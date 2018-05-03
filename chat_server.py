@@ -47,18 +47,22 @@ def send_to_client(client, msg):
     
 
 def process_message(client_t, msg):
-    if type(msg) == text:
+    if type(msg) == str:
         msg = bytes(msg, 'utf8')
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     # verify signature
-    rsa_verify(client_r['sign_key'], msg, sign)
+    rsa_verify(client_t['sign_key'], msg, sign)
     msg_list = msg.split(b' ')
     prefix = msg_list[0]
     msg = b' '.join(msg_list[1:])
-    if prefix == '/message':  # Message is encrypted with client keys, server cannot perform any more processing
+    print(prefix)
+    if prefix == b'/message':  # Message is encrypted with client keys, server cannot perform any more processing
         return msg
-    msg = rsa_dec(encryption_key, msg)
+    if prefix == b'/pubkey':
+        pass
+    else:
+        msg = rsa_dec(encryption_key, msg)
     # getting timestamp from the end of message
     ts = msg[-timestamp_length:]
     msg = msg[:-timestamp_length]
@@ -82,12 +86,9 @@ def handle_client(client):
     # first message is always the public key
     # Special actions needed because the client's public key is not known yet
     msg = client.recv(BUFSIZ)
-    print(msg)
     client_pubkey_str = msg[:-RSA_sign_length]
-    print(client_pubkey_str)
     # drop prefix and timestamp (will be verified later)
     client_pubkey_str = client_pubkey_str[len('/pubkey '):-timestamp_length]
-    print(client_pubkey_str)
     client_pubkey = RSA.import_key(client_pubkey_str)
     client_t = {
         'client': client,
@@ -96,8 +97,8 @@ def handle_client(client):
         'sign_key': client_pubkey
     }
     # Now that we know the client's pubkey, we can verify the first message
-    _ = process_message(msg)
-
+    _ = process_message(client_t, msg)
+    print("Client key verified")
     # Second message is always the name
     msg = client.recv(BUFSIZ)
     name = process_message(client_t).decode('utf8')

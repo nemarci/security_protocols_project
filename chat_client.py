@@ -89,7 +89,7 @@ def process_msg_from_server(msg):
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
-    return msg.decode('utf8')
+    return msg
 
         
 
@@ -97,6 +97,7 @@ def receive():
     while True:
         try:
             msg = client_socket.recv(BUFSIZ)
+            print("RAW MESSAGE: ", msg)
             msg = process_msg_from_server(msg)
             messages.append(msg)
             print_messages()

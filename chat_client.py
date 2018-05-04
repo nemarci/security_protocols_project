@@ -4,6 +4,7 @@ from threading import Thread
 from chat_common import *
 import os
 import sys
+from time import sleep
 
 
 # Reading cryptographic keys
@@ -24,6 +25,8 @@ password = ''
 # Generating own key
 signing_key = RSA.generate(rsa_keylength)
 signing_key_pubstr = signing_key.publickey().exportKey(format='DER')
+encryption_key = RSA.generate(rsa_keylength)
+encryption_key_pubstr = encryption_key.publickey().exportKey(format='DER')
 
 msg_to_send = ""
 messages = []
@@ -71,11 +74,26 @@ def prepare_msg(msg, enc, client_public_enckey=None):
     signature = rsa_sign(signing_key, b)
     return b+signature
 
-def key_request(channel, password):
+def key_request(channel, pw):
     enckey = get_pubkey_of_channel_owner(channel, 'enc')
-    send_to_server("/key_request", enc='client_assym', enckey)
-    response = process_msg_from_server(client_socket.recv(BUFSIZ)
-    
+    send_to_server("/key_request " + name + ' ' + pw, 'client_assym', enckey)
+    response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
+    prefix = response.split(b' ')[0]
+    if prefix == b'/channel_key':
+        # cut down prefix and name
+        global channel_key
+        channel_key = b' '.join(response.split(b' ')[2:])
+
+
+def key_response(channel, client, pw): 
+    enckey = get_pubkey_of_client(client, 'enc')
+    if pw == password:
+        msg = prepare_msg("/channel_key " + name + " " + channel_key, enc='assym', client_public_enckey=enckey)
+    else:
+        msg = prepare_msg("/wrong_pw " + name, enc='assym', client_public_enckey=enckey)
+    client_socket.send(msg)
+        
+        
 
 def get_pubkey_of_channel_owner(channel, keytype='sign'):
     # If pubkey_request is sent without client name, the server will send back the channel owner's key
@@ -88,8 +106,11 @@ def get_pubkey_of_channel_owner(channel, keytype='sign'):
     client_pubkey = RSA.importKey(client_pubkey_str, format="DER")
     return client_pubkey
     
-def get_sign_pubkey_of_client(client, keytype='sign'):
-    send_to_server("/pubkey_request " + client, enc='server')
+def get_pubkey_of_client(client, keytype='sign'):
+    if keytype=='enc':
+        send_to_server("/enc_pubkey_request " + client, enc='server')
+    else:
+        send_to_server("/pubkey_request " + client, enc='server')
     msg = client_socket.recv(BUFSIZ)
     client_pubkey_str = process_msg_from_server(msg)
     client_pubkey = RSA.importKey(client_pubkey_str, format="DER")
@@ -118,11 +139,23 @@ def process_msg_from_server(msg):
         
     return msg
 
-def process_msg_from_client(msg):
+def process_msg_from_client(msg, enc='sym'):
     msg_parts = msg.split[' ']
     prefix, sender = msg_parts[0:2]
     sender = sender.decode('utf8')
-    sender_pubkey_str = get_pubkey_of_client(sender)
+    sign = msg[-RSA_sign_length:]
+    msg = msg[:-RSA_sign_length]
+    sender_pubkey = get_pubkey_of_client(sender)
+    rsa_verify(sender_pubkey, msg, sign)
+    if enc=='assym':
+        sender_enc_pubkey_str = get_pubkey_of_client(sender, keytype='enc')
+        msg = rsa_dec(sender_enc_pubkey_str, msg)
+    else:
+        msg = aes_dec(channel_key, msg)
+    ts = msg[-timestamp_length:]
+    msg = msg[:-timestamp_length]
+    check_timestamp(ts)
+    return msg
 
 
 def receive():
@@ -131,6 +164,7 @@ def receive():
             msg = client_socket.recv(BUFSIZ)
             msg = process_msg_from_server(msg)
             if msg != b'':
+                Debug(msg)
                 msg = msg.decode('utf8')
                 messages.append(msg)
                 print_messages()
@@ -138,6 +172,16 @@ def receive():
             break
         except (InvalidTimestampError, WrongSignatureError):
             break 
+
+def join_channel(channel, msg):
+    client_socket.send(prepare_msg(msg, 'server'))
+    pw_msg = process_msg_from_server(client_socket.recv(BUFSIZ)).decode('utf8')
+    if pw_msg == '/pw_required':
+        pw = input('Enter password:')
+        try:
+            channel_key = key_request(channel, password)
+        except WrongPassword:
+            print('Cannot join channel, wrong password')
 
 def send(msg, event=None):
     msg_parts = msg.split(' ')
@@ -151,10 +195,14 @@ def send(msg, event=None):
             result = msg + ' '
             result = prepare_msg(result, 'server')
     else:
+        global password
         if msg_parts[0] in available_commands:
             if msg_parts[0] == '/create_channel':
                 generate_channel_key()
                 password = get_random_bytes(128)
+                result = ''
+                client_socket.send(prepare_msg(msg, 'server'))
+                
             result = prepare_msg(msg, 'server')
             if msg_parts[0] == '/password':
                 if len(msg_parts)==1:
@@ -164,15 +212,7 @@ def send(msg, event=None):
                 result = prepare_msg(msg_parts[0], 'server')  # Inform server that the password has been set, but do not send the actual password
             if msg_parts[0] == '/join_channel':
                 result = ''
-                client_socket.send(prepare_msg(msg, 'server'))
-                channel = msg_parts[1]
-                pw_msg = process_msg_from_server(client_socket.recv(BUFSIZ)).decode('utf8')
-                if pw_msg == '/pw_required':
-                    pw = input('Enter password:')
-                    try:
-                        channel_key = key_request(channel, password)
-                    except WrongPassword:
-                        print('Cannot join channel, wrong password')
+                join_channel(msg_parts[1], msg)
         else:
             result = '/message %s' % msg        
             result = prepare_msg(result, 'client_sym')
@@ -222,6 +262,7 @@ receive_thread.start()
 
 # Send public key to server
 send_to_server(b'/sign_pubkey ' + signing_key_pubstr, None)
+sleep(0.1)
 send_to_server(b'/enc_pubkey ' + encryption_key_pubstr, None)
 "Client loop -> if there's an input, send it"
 while True:

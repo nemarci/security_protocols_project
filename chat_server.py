@@ -95,7 +95,7 @@ def handle_client(client):
         'client': client,
         'name': None,
         'channel': None,
-        'sign_key': client_pubkey
+        'sign_key': client_pubkey,
         'enc_key': None
     }
     # Now that we know the client's pubkey, we can verify the first message
@@ -163,7 +163,7 @@ def create_channel(channel, client_t):
     send_to_client(client_t['client'], "Channel created with name: %s" % channel)
     send_to_client(client_t['client'], "Your channel is password protected by default. A random password has been set, so currently nobody can join your channel. You can set the password like this: /password <password>. You can also disable password with /nopassword")
     # Without sleep the client treats two consecutive message as one
-    sleep(0.1)
+    sleep(0.5)
     join_channel(channel, client_t)
     channels[channel]['password_protected'] = True
 
@@ -212,7 +212,8 @@ def check_password(channel, client_t):
     _, msg = process_message(client_t['client'].recv(BUFSIZ))
     send_to_client(channel['owner']['client'], msg)
     _, answer = process_message(channel['owner']['client'].recv(BUFSIZ))
-    if answer=='OK':
+    prefix = answer.split(b' ')[0]
+    if prefix == b'/channel_key':
         return True
     else:
         return False

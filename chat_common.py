@@ -30,7 +30,7 @@ def Debug(text):
         print("DEBUG: ", text)
 
 rsa_keylength = 2048
-rsa_keystring = b'-----BEGIN PUBLIC KEY-----'  # every public key begins with this string
+#rsa_keystring = b'-----BEGIN PUBLIC KEY-----'  # every public key begins with this string
 
 def rsa_enc(key, plaintext):
     cipher = PKCS1_OAEP.new(key)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from time import sleep
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 from chat_common import *
@@ -32,10 +33,9 @@ SERVER.bind(ADDR)
 def prepare_message(msg):
     if type(msg) == str:
         msg = bytes(msg, "utf8")
-    msg = msg + timestamp()
     msg_list = msg.split(b' ')
     prefix = msg_list[0]
-    if prefix == '/message':  # Message is already encrypted and signed by client
+    if prefix == b'/message':  # Message is already encrypted and signed by client
         pass
     else:
         msg += timestamp()
@@ -55,10 +55,11 @@ def process_message(client_t, msg):
     rsa_verify(client_t['sign_key'], msg, sign)
     msg_list = msg.split(b' ')
     prefix = msg_list[0]
+    Debug(prefix)
     msg = b' '.join(msg_list[1:])
-    print(prefix)
-    if prefix == b'/message':  # Message is encrypted with client keys, server cannot perform any more processing
-        return msg
+    if prefix in [b'/message', b'/pwresponse']:  # Message is encrypted with client keys, server cannot perform any more processing
+        return (prefix, msg)
+    # Public keys are not encrypted
     if prefix == b'/pubkey':
         pass
     else:
@@ -68,7 +69,7 @@ def process_message(client_t, msg):
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
-    return msg
+    return (prefix, msg)
 
 
 "Handle client connection"
@@ -98,11 +99,10 @@ def handle_client(client):
     }
     # Now that we know the client's pubkey, we can verify the first message
     _ = process_message(client_t, msg)
-    print("Client key verified")
     # Second message is always the name
     msg = client.recv(BUFSIZ)
-    name = process_message(client_t).decode('utf8')
-    
+    _, name = process_message(client_t, msg)
+    name = name.decode('utf8')
     while name in clients:
         # The name is already taken -> let the user know!
         send_to_client(client, 'This name is already taken!\nPlease choose another!')
@@ -125,17 +125,15 @@ def start_client_loop(client_t):
     client = client_t['client']
     while client in clients:
         msg = client.recv(BUFSIZ)
-        msg_parts = msg.decode('utf8').split(' ')
-        order = msg_parts[0]
-        if len(msg_parts) == 1:
+        order, msg = process_message(client_t, msg)
+        order = order.decode('utf8')
+        if msg == b'':
             order_dictionary.get(order)(None, client_t)
-        elif len(msg_parts) == 2:
-            param = msg_parts[1]
-            order_dictionary.get(order)(param, client_t)
+        # cannot decode /message
+        elif order == '/message':
+            order_dictionary.get(order)(msg, client_t)
         else:
-            params = ''
-            for word in msg_parts[1:]:
-                params += ' %s' % word
+            params = msg.decode('utf8')
             order_dictionary.get(order)(params, client_t)
 
 "Sending a message to every channel members"
@@ -153,11 +151,15 @@ def create_channel(channel, client_t):
         'name': channel,
         'members': {},
         'owner': client_t,
-        'password_protected': True
+        'password_protected': False
     }
     channels[channel] = new_channel
     send_to_client(client_t['client'], "Channel created with name: %s" % channel)
+    send_to_client(client_t['client'], "Your channel is password protected by default. A random password has been set, so currently nobody can join your channel. You can set the password like this: /password <password>. You can also disable password with /nopassword")
+    # Without sleep the client treats two consecutive message as one
+    sleep(0.1)
     join_channel(channel, client_t)
+    channels[channel]['password_protected'] = True
 
 def leave_channel(params, client_t):
     if client_t['channel'] == None:
@@ -171,6 +173,11 @@ def leave_channel(params, client_t):
         del channels[channel_to_check]
     else:
         msg = '%s has left the channel!' % client_t['name']
+        if channels[channel_to_check]['owner'] == client_t:
+            # if the owner left the group, pick a new owner
+            new_owner = next(iter(channels[channel_to_check]['members'].values()))
+            channels[channel_to_check]['owner'] = new_owner
+            msg += "He/she was the owner. The new owner is %s." % new_owner['name']
         broadcast(msg, channels[channel_to_check]['members'])
 
 
@@ -195,10 +202,10 @@ def list_channel_members(channel, client_t):
     send_to_client(client_t['client'], result) 
 
 def check_password(channel, client_t):
-    send_to_client(client_t['client'], "Enter password:")
-    msg = client_t['client'].recv(BUFSIZ)
+    send_to_client(client_t['client'], prepare_message("/pwrequest " + channel['owner']['name']))
+    _, msg = process_message(client_t['client'].recv(BUFSIZ))
     send_to_client(channel['owner']['client'], msg)
-    answer = channel['owner']['client'].recv(BUFSIZ)
+    _, answer = process_message(channel['owner']['client'].recv(BUFSIZ))
     if answer=='OK':
         return True
     else:
@@ -212,7 +219,7 @@ def join_channel(channel, client_t):
     if channel not in channels:
         send_to_client(client_t['client'], 'This channel does not exist!') 
     else:
-        if (not channel['password_protected']) or check_password(channel, client_t):
+        if (not channels[channel]['password_protected']) or check_password(channels[channel], client_t):
             channels[channel]['members'][client_t['name']] = client_t
             client_t['channel'] = channel
             send_to_client(client_t['client'], 'You are now in the channel \"%s\"' % channel) 
@@ -226,7 +233,7 @@ def join_channel(channel, client_t):
 def send_message(msg, client_t):
     if client_t['channel'] != None:
         channel = channels[client_t['channel']]
-        broadcast(msg, channel['members'], '%s: ' % client_t['name'])
+        broadcast(msg, channel['members'], b'/message ' + bytes(client_t['name'], 'utf8') + b' ')
     else:
         send_to_client(client_t['client'], 'You have to be in a channel to access this function!')
 
@@ -241,16 +248,26 @@ def quit_app(params, client_t):
     del client_t
 
 def password_on(params, client_t):
-    client_t['channel']['password_protected'] = True
+    if channels[client_t['channel']]['owner'] == client_t:
+        channels[client_t['channel']]['password_protected'] = True
+    else:
+        send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
 def password_off(params, client_t):
-    client_t['channel']['password_protected'] = False
+    if channels[client_t['channel']]['owner'] == client_t:
+        channels[client_t['channel']]['password_protected'] = False
+    else:
+        send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
 def key_request(params, client_t):
-    if client_t['channel'] == None:
-        send_to_client(client_t['client'], "You need to be in a channel to request a key")
+    if params == '':
+        if client_t['channel'] == None:
+            send_to_client(client_t['client'], "You need to be in a channel to request a key")
+        else:
+            send_to_client(client_t['client'],client_t['channel']['owner']['sign_key'])
     else:
-        send_to_client(client_t['channel']['owner'], "/key_request")
+        requested_client = params
+        send_to_client(client_t['client'], client_t[requested_client]['sign_key'])
     
 
 order_dictionary = {
@@ -263,7 +280,7 @@ order_dictionary = {
     '/quit':                    quit_app,
     '/password':                password_on,
     '/nopassword':              password_off,
-    '/key_request':             key_request,
+    '/pubkey_request':          key_request,
 }
 
 if __name__ == "__main__":

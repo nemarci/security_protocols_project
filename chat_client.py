@@ -34,19 +34,18 @@ available_commands = [
     '/leave_channel',
     '/set_name',
     '/create_channel',
-    '/quit'
-    '/channel_key'
-    '/password_request'
-    '/password'
-    '/nopassword'
-    '/set_password'
-    '/pubkey_request'
+    '/quit',
+    '/channel_key',
+    '/password',
+    '/nopassword',
+    '/pubkey_request',
+    '/pwrequest',
     '/pubkey'
 ]
 
 def generate_channel_key():
+    global channel_key
     channel_key = get_random_bytes(32)
-    channel_iv = get_random_bytes(AES.block_size)
 
 def send_to_server(msg, enc):
     client_socket.send(prepare_msg(msg, enc))
@@ -54,8 +53,7 @@ def send_to_server(msg, enc):
 def send_encrypted_to_server(msg):
     client_socket.send(process_encrypted_msg_to_server(msg))
 
-def prepare_msg(msg, enc):
-    ts = timestamp()
+def prepare_msg(msg, enc, client_public_enckey=None):
     if type(msg) == str:
         b = bytes(msg, 'utf8')
     else:   
@@ -63,11 +61,11 @@ def prepare_msg(msg, enc):
     b_list = b.split(b' ')
     prefix = b_list[0]
     b = b' '.join(b_list[1:])
+    ts = timestamp()
     b = b + ts
     if enc=='server':
         b = rsa_enc(server_public_enckey, b)
     elif enc=='client_assym':
-        client_public_enckey = get_pubkey_of_channel_owner()
         b = rsa_enc(client_public_enckey, b)
     elif enc=='client_sym':
         b = aes_enc(channel_key, b)
@@ -76,8 +74,20 @@ def prepare_msg(msg, enc):
     return b+signature
 
 def get_pubkey_of_channel_owner():
+    # If pubkey_request is sent without client name, the server will send back the channel owner's key
     send_encrypted_to_server("/pubkey_request", enc='server')
+    msg = client_socket.recv(BUFSIZ)
+    client_pubkey_str = process_msg_from_server(msg)
+    client_pubkey = RSA.importKey(client_pubkey_str, format="DER")
+    return client_pubkey
     
+def get_pubkey_of_client(client):
+    send_encrypted_to_server("/pubkey_request " + client, enc='server')
+    msg = client_socket.recv(BUFSIZ)
+    client_pubkey_str = process_msg_from_server(msg)
+    client_pubkey = RSA.importKey(client_pubkey_str, format="DER")
+    return client_pubkey
+
 def process_msg_from_server(msg):
     # getting signature from the end of message
     sign = msg[-RSA_sign_length:]
@@ -89,16 +99,31 @@ def process_msg_from_server(msg):
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
+    if msg.startswith(b"/pwrequest"):
+        print("Enter password:")
+        password = input()
+        channel_owner = msg.split(' ')[1].decode('utf8')
+        key = get_pubkey_of_client(channel_owner)
+        send_to_server(prepare_message("/pwresponse " + password, 'client_assym', key))
+        return b""
+    if msg.startswith(b'/pwresponse'):
+        pw = ''.join(msg.split(' ')[1:])
+        
     return msg
 
-        
+def process_msg_from_client(msg):
+    msg_parts = msg.split[' ']
+    prefix, sender = msg_parts[0:2]
+    sender = sender.decode('utf8')
+    sender_pubkey_str = get_pubkey_of_client(sender)
+
 
 def receive():
     while True:
         try:
             msg = client_socket.recv(BUFSIZ)
-            print("RAW MESSAGE: ", msg)
             msg = process_msg_from_server(msg)
+            msg = msg.decode('utf8')
             messages.append(msg)
             print_messages()
         except OSError:
@@ -112,26 +137,28 @@ def send(msg, event=None):
     if len(msg_parts) == 1:
         if msg not in available_commands:
             result = '/message %s' % msg
+            result = prepare_msg(result, 'client_sym')
         else:
-            result = msg
+            # Space needed because server looks for a space when checking prefix
+            result = msg + ' '
+            result = prepare_msg(result, 'server')
     else:
         if msg_parts[0] in available_commands:
-            if msg_parts[0] == '/set_name':
-                result = msg_parts[1]
-            else:
-                result = msg
             if msg_parts[0] == '/create_channel':
                 generate_channel_key()
+                password = get_random_bytes(128)
+            result = prepare_msg(msg, 'server')
             if msg_parts[0] == '/password':
                 if len(msg_parts)==1:
                     password = ''
                 else:
                     password = ''.join(msg_parts[1:])
-                result = msg_parts[0]  # Inform server that the password has been set, but do not send the actual password
+                result = prepare_msg(msg_parts[0], 'server')  # Inform server that the password has been set, but do not send the actual password
         else:
             result = '/message %s' % msg        
-    
-    client_socket.send(bytes(result, "utf8"))
+    if type(result) == str:
+        result = bytes(result, 'utf8') 
+    client_socket.send(result)
 
     if msg == '/quit':
         client_socket.close()
@@ -139,7 +166,7 @@ def send(msg, event=None):
         
 
 def print_messages():
-    os.system('cls')
+    clear()
     for msg in messages:
         print(msg)
 
@@ -168,7 +195,7 @@ BUFSIZ = 1024
 ADDR = (HOST, PORT)
 client_socket = socket(AF_INET, SOCK_STREAM)
 client_socket.connect(ADDR)
-os.system('cls')
+clear()
 receive_thread = Thread(target=receive)
 receive_thread.start()
 

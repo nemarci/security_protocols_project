@@ -21,6 +21,13 @@ except Importerror:
         exit(1)
 
 from datetime import datetime
+import os
+
+debug = True
+
+def Debug(text):
+    if debug:
+        print("DEBUG: ", text)
 
 rsa_keylength = 2048
 rsa_keystring = b'-----BEGIN PUBLIC KEY-----'  # every public key begins with this string
@@ -87,4 +94,9 @@ def check_timestamp(ts):
     if difference < 0 or difference > delay_limit:
         raise InvalidTimestampError(difference)
 
-
+# Clear screen
+def clear():
+    if os.name == 'nt':
+        os.system('cls')
+    else:
+        os.system('clear')

@@ -79,7 +79,7 @@ def prepare_msg(msg, enc, client_public_enckey=None):
 
 def key_request(channel, pw):
     enckey = get_pubkey_of_channel_owner(channel, 'enc')
-    send_to_server("/key_request " + name + ' ' + pw, 'client_assym', enckey)
+    send_to_server("/key_request " + name + ' ' + channel + ' ' + pw, 'client_assym', enckey)
     Debug("Key request sent")
     prefix, _, response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
     if prefix == b'/channel_key':
@@ -125,6 +125,10 @@ def process_msg_from_server(msg):
         sleep(0.1)
         _, sender, msg = process_msg_from_client(msg)
         return sender + b': ' + msg
+    if msg.startswith(b'/key_request'):
+        _, sender, msg = process_msg_from_client(msg)
+        channel, pw = msg.split[b' '][0:2]
+        key_response(channel, sender, password)
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     # verify signature

@@ -212,11 +212,12 @@ def list_channel_members(channel, client_t):
             result += '%s\n' % member['name']
     send_to_client(client_t['client'], result) 
 
+
 def check_password(channel, client_t):
     send_to_client(client_t['client'], '/pw_required')
-    _, msg = process_message(client_t['client'].recv(BUFSIZ))
+    _, msg = process_message(client_t, client_t['client'].recv(BUFSIZ))
     send_to_client(channel['owner']['client'], msg)
-    _, answer = process_message(channel['owner']['client'].recv(BUFSIZ))
+    _, answer = process_message(channel['owner']['client'], channel['owner']['client'].recv(BUFSIZ))
     prefix = answer.split(b' ')[0]
     if prefix == b'/channel_key':
         return True
@@ -305,6 +306,7 @@ order_dictionary = {
     '/leave_channel':           leave_channel,
     '/message':                 send_message,
     '/join_channel':            join_channel,
+    '/set_name':                set_name,
     '/quit':                    quit_app,
     '/password':                password_on,
     '/nopassword':              password_off,

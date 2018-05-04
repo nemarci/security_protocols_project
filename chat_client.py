@@ -21,6 +21,10 @@ my_name = ''
 channel_key = b'\x00'*32
 password = ''
 
+# if a function is waiting for a message, it sets this variable:
+waiting_for_message = False
+# global_message variable is used to put special messages to global scope so other functions can access it
+global_message = ''
 
 # Generating own key
 signing_key = RSA.generate(rsa_keylength)
@@ -49,7 +53,6 @@ available_commands = [
 def generate_channel_key():
     global channel_key
     channel_key = get_random_bytes(32)
-    Debug(channel_key)
 
 def send_to_server(msg, enc, client_public_enckey=None):
     client_socket.send(prepare_msg(msg, enc, client_public_enckey))
@@ -77,21 +80,23 @@ def prepare_msg(msg, enc, client_public_enckey=None):
 def key_request(channel, pw):
     enckey = get_pubkey_of_channel_owner(channel, 'enc')
     send_to_server("/key_request " + name + ' ' + pw, 'client_assym', enckey)
-    response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
-    prefix = response.split(b' ')[0]
+    Debug("Key request sent")
+    prefix, _, response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
     if prefix == b'/channel_key':
         # cut down prefix and name
         global channel_key
-        channel_key = b' '.join(response.split(b' ')[2:])
+        channel_key = response
 
 
 def key_response(channel, client, pw): 
     enckey = get_pubkey_of_client(client, 'enc')
     if pw == password:
         msg = prepare_msg("/channel_key " + name + " " + channel_key, enc='assym', client_public_enckey=enckey)
+        client_socket.send(msg)
     else:
         msg = prepare_msg("/wrong_pw " + name, enc='assym', client_public_enckey=enckey)
-    client_socket.send(msg)
+        client_socket.send(msg)
+        raise WrongPassword
         
         
 
@@ -101,8 +106,7 @@ def get_pubkey_of_channel_owner(channel, keytype='sign'):
         send_to_server("/enc_pubkey_request_owner " + channel, enc='server')
     else:
         send_to_server("/pubkey_request_owner " + channel, enc='server')
-    msg = client_socket.recv(BUFSIZ)
-    client_pubkey_str = process_msg_from_server(msg)
+    client_pubkey_str = process_msg_from_server(client_socket.recv(BUFSIZ))
     client_pubkey = RSA.importKey(client_pubkey_str)
     return client_pubkey
     
@@ -111,16 +115,16 @@ def get_pubkey_of_client(client, keytype='sign'):
         send_to_server("/enc_pubkey_request " + client, enc='server')
     else:
         send_to_server("/pubkey_request " + client, enc='server')
-    msg = client_socket.recv(BUFSIZ)
-    client_pubkey_str = process_msg_from_server(msg)
+    client_pubkey_str = process_msg_from_server(client_socket.recv(BUFSIZ))
     client_pubkey = RSA.importKey(client_pubkey_str)
     return client_pubkey
 
 def process_msg_from_server(msg):
     # getting signature from the end of message
     if msg.startswith(b'/message'):
-        msg = process_msg_from_client(msg)
-        return msg
+        sleep(0.1)
+        _, sender, msg = process_msg_from_client(msg)
+        return sender + b': ' + msg
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     # verify signature
@@ -130,15 +134,15 @@ def process_msg_from_server(msg):
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
-    if msg.startswith(b"/no_pw_required"):
+    if msg.startswith(b'/no_pw_required'):
         return b''
-        
     return msg
 
 def process_msg_from_client(msg, enc='sym'):
     msg_parts = msg.split(b' ')
     prefix, sender = msg_parts[0:2]
     sender = sender.decode('utf8')
+    msg = b' '.join(msg_parts[2:])
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     sender_pubkey = get_pubkey_of_client(sender)
@@ -147,13 +151,12 @@ def process_msg_from_client(msg, enc='sym'):
         sender_enc_pubkey_str = get_pubkey_of_client(sender, keytype='enc')
         msg = rsa_dec(sender_enc_pubkey_str, msg)
     else:
-        Debug(msg)
-        Debug(channel_key)
         msg = aes_dec(channel_key, msg)
     ts = msg[-timestamp_length:]
     msg = msg[:-timestamp_length]
     check_timestamp(ts)
-    return msg
+    sender = bytes(sender, 'utf8')
+    return (prefix, sender, msg)
 
 
 def receive():
@@ -161,25 +164,35 @@ def receive():
         try:
             msg = client_socket.recv(BUFSIZ)
             msg = process_msg_from_server(msg)
-            if msg != b'':
-                Debug(msg)
-                msg = msg.decode('utf8')
-                messages.append(msg)
-                print_messages()
+            global global_message
+            if waiting_for_message:
+                global_message = msg
+            else:
+                if msg != b'':
+                    msg = msg.decode('utf8')
+                    messages.append(msg)
+                    print_messages()
         except OSError:
             break
         except (InvalidTimestampError, WrongSignatureError):
             break 
 
 def join_channel(channel, msg):
+    global waiting_for_message
+    global channel_key
     client_socket.send(prepare_msg(msg, 'server'))
-    pw_msg = process_msg_from_server(client_socket.recv(BUFSIZ)).decode('utf8')
-    if pw_msg == '/pw_required':
+    waiting_for_message = True 
+    sleep(0.1)
+    pw_msg = global_message
+    waiting_for_message = False
+    if pw_msg == b'/pw_required':
         pw = input('Enter password:')
         try:
             channel_key = key_request(channel, password)
         except WrongPassword:
             print('Cannot join channel, wrong password')
+    else:
+        channel_key = key_request(channel, '')  # If there is no password, an empty string will let you in
 
 def send(msg, event=None):
     msg_parts = msg.split(' ')
@@ -207,6 +220,8 @@ def send(msg, event=None):
                 else:
                     password = ''.join(msg_parts[1:])
                 result = prepare_msg(msg_parts[0], 'server')  # Inform server that the password has been set, but do not send the actual password
+            if msg_parts[0] == '/nopassword':
+                password = ''
             if msg_parts[0] == '/join_channel':
                 result = ''
                 join_channel(msg_parts[1], msg)
@@ -226,7 +241,7 @@ def send(msg, event=None):
         
 
 def print_messages():
-    clear()
+    #clear()
     for msg in messages:
         print(msg)
 

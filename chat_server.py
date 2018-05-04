@@ -51,16 +51,16 @@ def send_to_client(client, msg):
 def process_message(client_t, msg):
     if type(msg) == str:
         msg = bytes(msg, 'utf8')
-    sign = msg[-RSA_sign_length:]
-    msg = msg[:-RSA_sign_length]
-    # verify signature
-    rsa_verify(client_t['sign_key'], msg, sign)
     msg_list = msg.split(b' ')
     prefix = msg_list[0]
     Debug(prefix)
     msg = b' '.join(msg_list[1:])
     if prefix in [b'/message']:  # Message is encrypted with client keys, server cannot perform any more processing
         return (prefix, msg)
+    sign = msg[-RSA_sign_length:]
+    msg = msg[:-RSA_sign_length]
+    # verify signature
+    rsa_verify(client_t['sign_key'], msg, sign)
     # Public keys are not encrypted
     if prefix in [b'/sign_pubkey', b'/enc_pubkey']:
         pass
@@ -255,7 +255,7 @@ def send_message(msg, client_t):
     if client_t['channel'] != None:
         channel = channels[client_t['channel']]
         # Cut down message prefix, we'll add it back
-        msg = msg[len('/message'):]
+        Debug(len(msg)); Debug(msg)
         broadcast(msg, channel['members'], b'/message ' + bytes(client_t['name'], 'utf8') + b' ')
     else:
         send_to_client(client_t['client'], 'You have to be in a channel to access this function!')
@@ -283,20 +283,19 @@ def password_off(params, client_t):
         send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
 def pubkey_request(params, client_t):
-    requested_client = params
     send_to_client(client_t['client'], sign_keys[params].exportKey(format='DER'))
+    Debug("Pubkey sent to client %s" % client_t['name'])
 
 def enc_pubkey_request(params, client_t):
-    requested_client = params
     send_to_client(client_t['client'], enc_keys[params].exportKey(format='DER'))
 
 def pubkey_request_owner(params, client_t):
     channel = params
-    send_to_client(client_t['client'], channels['channel']['owner']['sign_key'].exportKey(format='DER'))
+    send_to_client(client_t['client'], channels[channel]['owner']['sign_key'].exportKey(format='DER'))
     
 def enc_pubkey_request_owner(params, client_t):
     channel = params
-    send_to_client(client_t['client'], channels['channel']['owner']['enc_key'].exportKey(format='DER'))
+    send_to_client(client_t['client'], channels[channel]['owner']['enc_key'].exportKey(format='DER'))
     
 
 order_dictionary = {

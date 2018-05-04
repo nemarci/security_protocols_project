@@ -94,6 +94,9 @@ def check_timestamp(ts):
     if difference < 0 or difference > delay_limit:
         raise InvalidTimestampError(difference)
 
+class WrongPassword(ValueError):
+    pass
+
 # Clear screen
 def clear():
     if os.name == 'nt':

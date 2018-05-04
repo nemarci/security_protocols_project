@@ -17,6 +17,8 @@ encryption_key = RSA.importKey(encryption_key_str)
 "We can store the user's names and addresses in these containers"
 clients = {}
 addresses = {}
+sign_keys = {}
+enc_keys = {}
 
 "We store the channels in this container"
 channels = {}
@@ -112,11 +114,14 @@ def handle_client(client):
     while name in clients:
         # The name is already taken -> let the user know!
         send_to_client(client, 'This name is already taken!\nPlease choose another!')
-        name = recieve_from_client(client_t)
+        _, name = process_message(client_t, msg)
+        name = name.decode('utf8')
     
     client_t['name'] = name
     
     clients[client] = name
+    sign_keys[name] = client_pubkey
+    enc_keys[name] = client_enc_pubkey
     welcome = 'Welcome %s! If you ever want to quit, type /quit to exit\n' % name
     welcome += 'You are now in the lobby, use the following commands:\n'
     welcome += '/list_channels\n'
@@ -248,6 +253,8 @@ def join_channel(channel, client_t):
 def send_message(msg, client_t):
     if client_t['channel'] != None:
         channel = channels[client_t['channel']]
+        # Cut down message prefix, we'll add it back
+        msg = msg[len('/message'):]
         broadcast(msg, channel['members'], b'/message ' + bytes(client_t['name'], 'utf8') + b' ')
     else:
         send_to_client(client_t['client'], 'You have to be in a channel to access this function!')
@@ -276,11 +283,11 @@ def password_off(params, client_t):
 
 def pubkey_request(params, client_t):
     requested_client = params
-    send_to_client(client_t['client'], client_t[requested_client]['sign_key'].exportKey(format='DER'))
+    send_to_client(client_t['client'], sign_keys[params].exportKey(format='DER'))
 
 def enc_pubkey_request(params, client_t):
     requested_client = params
-    send_to_client(client_t['client'], client_t[requested_client]['enc_key'].exportKey(format='DER'))
+    send_to_client(client_t['client'], enc_keys[params].exportKey(format='DER'))
 
 def pubkey_request_owner(params, client_t):
     channel = params

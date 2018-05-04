@@ -18,7 +18,7 @@ kfile.close()
 server_public_enckey = RSA.importKey(encryption_key_str)
 
 my_name = ''
-channel_key = ''
+channel_key = b'\x00'*32
 password = ''
 
 
@@ -43,13 +43,13 @@ available_commands = [
     '/password',
     '/nopassword',
     '/pubkey_request',
-    '/pwrequest',
     '/pubkey'
 ]
 
 def generate_channel_key():
     global channel_key
     channel_key = get_random_bytes(32)
+    Debug(channel_key)
 
 def send_to_server(msg, enc, client_public_enckey=None):
     client_socket.send(prepare_msg(msg, enc, client_public_enckey))
@@ -103,7 +103,7 @@ def get_pubkey_of_channel_owner(channel, keytype='sign'):
         send_to_server("/pubkey_request_owner " + channel, enc='server')
     msg = client_socket.recv(BUFSIZ)
     client_pubkey_str = process_msg_from_server(msg)
-    client_pubkey = RSA.importKey(client_pubkey_str, format="DER")
+    client_pubkey = RSA.importKey(client_pubkey_str)
     return client_pubkey
     
 def get_pubkey_of_client(client, keytype='sign'):
@@ -113,11 +113,14 @@ def get_pubkey_of_client(client, keytype='sign'):
         send_to_server("/pubkey_request " + client, enc='server')
     msg = client_socket.recv(BUFSIZ)
     client_pubkey_str = process_msg_from_server(msg)
-    client_pubkey = RSA.importKey(client_pubkey_str, format="DER")
+    client_pubkey = RSA.importKey(client_pubkey_str)
     return client_pubkey
 
 def process_msg_from_server(msg):
     # getting signature from the end of message
+    if msg.startswith(b'/message'):
+        msg = process_msg_from_client(msg)
+        return msg
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     # verify signature
@@ -127,20 +130,13 @@ def process_msg_from_server(msg):
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
-    if msg.startswith(b"/pwrequest"):
-        print("Enter password:")
-        password = input()
-        channel_owner = msg.split(' ')[1].decode('utf8')
-        key = get_pubkey_of_client(channel_owner)
-        send_to_server(prepare_message("/pwresponse " + password, 'client_assym', key))
+    if msg.startswith(b"/no_pw_required"):
         return b''
-    if msg.startswith(b'/pwresponse'):
-        pw = ''.join(msg.split(' ')[1:])
         
     return msg
 
 def process_msg_from_client(msg, enc='sym'):
-    msg_parts = msg.split[' ']
+    msg_parts = msg.split(b' ')
     prefix, sender = msg_parts[0:2]
     sender = sender.decode('utf8')
     sign = msg[-RSA_sign_length:]
@@ -151,6 +147,8 @@ def process_msg_from_client(msg, enc='sym'):
         sender_enc_pubkey_str = get_pubkey_of_client(sender, keytype='enc')
         msg = rsa_dec(sender_enc_pubkey_str, msg)
     else:
+        Debug(msg)
+        Debug(channel_key)
         msg = aes_dec(channel_key, msg)
     ts = msg[-timestamp_length:]
     msg = msg[:-timestamp_length]
@@ -212,6 +210,8 @@ def send(msg, event=None):
             if msg_parts[0] == '/join_channel':
                 result = ''
                 join_channel(msg_parts[1], msg)
+            if msg_parts[0] == '/message':
+                result = prepare_msg(msg, 'client_sym')
         else:
             result = '/message %s' % msg        
             result = prepare_msg(result, 'client_sym')

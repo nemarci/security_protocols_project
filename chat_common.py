@@ -23,7 +23,7 @@ except Importerror:
 from datetime import datetime
 import os
 
-debug = True
+debug = False
 
 def Debug(text):
     if debug:

@@ -245,7 +245,7 @@ def send(msg, event=None):
         
 
 def print_messages():
-    #clear()
+    clear()
     for msg in messages:
         print(msg)
 

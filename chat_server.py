@@ -306,7 +306,6 @@ order_dictionary = {
     '/leave_channel':           leave_channel,
     '/message':                 send_message,
     '/join_channel':            join_channel,
-    '/set_name':                set_name,
     '/quit':                    quit_app,
     '/password':                password_on,
     '/nopassword':              password_off,

@@ -163,7 +163,7 @@ def create_channel(channel, client_t):
     send_to_client(client_t['client'], "Channel created with name: %s" % channel)
     send_to_client(client_t['client'], "Your channel is password protected by default. A random password has been set, so currently nobody can join your channel. You can set the password like this: /password <password>. You can also disable password with /nopassword")
     # Without sleep the client treats two consecutive message as one
-    sleep(0.5)
+    sleep(0.1)
     join_channel(channel, client_t)
     channels[channel]['password_protected'] = True
 
@@ -240,6 +240,7 @@ def join_channel(channel, client_t):
             channels[channel]['members'][client_t['name']] = client_t
             client_t['channel'] = channel
             send_to_client(client_t['client'], 'You are now in the channel \"%s\"' % channel) 
+            sleep(0.1)
             msg = '%s has joined the channel!' % client_t['name']
             broadcast(msg, channels[channel]['members'])
 

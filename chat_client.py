@@ -197,13 +197,12 @@ def send(msg, event=None):
     else:
         global password
         if msg_parts[0] in available_commands:
+            result = prepare_msg(msg, 'server')
             if msg_parts[0] == '/create_channel':
                 generate_channel_key()
                 password = get_random_bytes(128)
                 result = ''
                 client_socket.send(prepare_msg(msg, 'server'))
-                
-            result = prepare_msg(msg, 'server')
             if msg_parts[0] == '/password':
                 if len(msg_parts)==1:
                     password = ''

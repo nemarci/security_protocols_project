@@ -57,10 +57,10 @@ def process_message(client_t, msg):
     prefix = msg_list[0]
     Debug(prefix)
     msg = b' '.join(msg_list[1:])
-    if prefix in [b'/message', b'/pwresponse']:  # Message is encrypted with client keys, server cannot perform any more processing
+    if prefix in [b'/message']:  # Message is encrypted with client keys, server cannot perform any more processing
         return (prefix, msg)
     # Public keys are not encrypted
-    if prefix == b'/pubkey':
+    if prefix in [b'/sign_pubkey', b'/enc_pubkey']:
         pass
     else:
         msg = rsa_dec(encryption_key, msg)
@@ -89,17 +89,23 @@ def handle_client(client):
     msg = client.recv(BUFSIZ)
     client_pubkey_str = msg[:-RSA_sign_length]
     # drop prefix and timestamp (will be verified later)
-    client_pubkey_str = client_pubkey_str[len('/pubkey '):-timestamp_length]
+    client_pubkey_str = client_pubkey_str[len('/sign_pubkey '):-timestamp_length]
     client_pubkey = RSA.import_key(client_pubkey_str)
     client_t = {
         'client': client,
         'name': None,
         'channel': None,
         'sign_key': client_pubkey
+        'enc_key': None
     }
     # Now that we know the client's pubkey, we can verify the first message
     _ = process_message(client_t, msg)
-    # Second message is always the name
+    # Second message is the encryption key
+    msg = client.recv(BUFSIZ)
+    _, client_enc_pubkey_str = process_message(client_t, msg)
+    client_enc_pubkey = RSA.import_key(client_enc_pubkey_str)
+    client_t['enc_key'] = client_enc_pubkey
+    # Third message is always the name
     msg = client.recv(BUFSIZ)
     _, name = process_message(client_t, msg)
     name = name.decode('utf8')
@@ -202,7 +208,7 @@ def list_channel_members(channel, client_t):
     send_to_client(client_t['client'], result) 
 
 def check_password(channel, client_t):
-    send_to_client(client_t['client'], prepare_message("/pwrequest " + channel['owner']['name']))
+    send_to_client(client_t['client'], '/pw_required')
     _, msg = process_message(client_t['client'].recv(BUFSIZ))
     send_to_client(channel['owner']['client'], msg)
     _, answer = process_message(channel['owner']['client'].recv(BUFSIZ))
@@ -219,15 +225,22 @@ def join_channel(channel, client_t):
     if channel not in channels:
         send_to_client(client_t['client'], 'This channel does not exist!') 
     else:
-        if (not channels[channel]['password_protected']) or check_password(channels[channel], client_t):
+        if channels[channel]['password_protected']:
+            if check_password(channels[channel], client_t):
+                channels[channel]['members'][client_t['name']] = client_t
+                client_t['channel'] = channel
+                send_to_client(client_t['client'], 'You are now in the channel \"%s\"' % channel) 
+                msg = '%s has joined the channel!' % client_t['name']
+                broadcast(msg, channels[channel]['members'])
+            else:
+                send_to_client(client_t['client'], "Wrong password!")
+        else:
+            send_to_client(client_t['client'], '/no_pw_required')
             channels[channel]['members'][client_t['name']] = client_t
             client_t['channel'] = channel
             send_to_client(client_t['client'], 'You are now in the channel \"%s\"' % channel) 
             msg = '%s has joined the channel!' % client_t['name']
             broadcast(msg, channels[channel]['members'])
-        else:
-            send_to_client(client_t['client'], "Wrong password!")
-            
 
 
 def send_message(msg, client_t):
@@ -259,15 +272,21 @@ def password_off(params, client_t):
     else:
         send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
-def key_request(params, client_t):
-    if params == '':
-        if client_t['channel'] == None:
-            send_to_client(client_t['client'], "You need to be in a channel to request a key")
-        else:
-            send_to_client(client_t['client'],client_t['channel']['owner']['sign_key'])
-    else:
-        requested_client = params
-        send_to_client(client_t['client'], client_t[requested_client]['sign_key'])
+def pubkey_request(params, client_t):
+    requested_client = params
+    send_to_client(client_t['client'], client_t[requested_client]['sign_key'].exportKey(format='DER'))
+
+def enc_pubkey_request(params, client_t):
+    requested_client = params
+    send_to_client(client_t['client'], client_t[requested_client]['enc_key'].exportKey(format='DER'))
+
+def pubkey_request_owner(params, client_t):
+    channel = params
+    send_to_client(client_t['client'], channels['channel']['owner']['sign_key'].exportKey(format='DER'))
+    
+def enc_pubkey_request_owner(params, client_t):
+    channel = params
+    send_to_client(client_t['client'], channels['channel']['owner']['enc_key'].exportKey(format='DER'))
     
 
 order_dictionary = {
@@ -280,7 +299,10 @@ order_dictionary = {
     '/quit':                    quit_app,
     '/password':                password_on,
     '/nopassword':              password_off,
-    '/pubkey_request':          key_request,
+    '/pubkey_request':          pubkey_request,
+    '/pubkey_request_owner':    pubkey_request_owner,
+    '/enc_pubkey_request':      enc_pubkey_request,
+    '/enc_pubkey_request_owner':enc_pubkey_request_owner
 }
 
 if __name__ == "__main__":

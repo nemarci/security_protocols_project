@@ -8,7 +8,7 @@ try:
     from Cryptodome.Hash import SHA256
     from Cryptodome.Random import get_random_bytes
     from Cryptodome.Util import Padding
-except Importerror:
+except ImportError:
     try:
         from Crypto.PublicKey import RSA
         from Crypto.Cipher import PKCS1_OAEP, AES
@@ -16,7 +16,7 @@ except Importerror:
         from Crypto.Hash import SHA256
         from Crypto.Random import get_random_bytes
         from Crypto.Util import Padding
-    except Importerror:
+    except ImportError:
         print('You need either pycryptodomex or pycryptodome to run this script')
         exit(1)
 

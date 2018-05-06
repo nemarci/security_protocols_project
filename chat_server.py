@@ -47,7 +47,6 @@ def prepare_message(msg):
 def send_to_client(client, msg):
     client.send(prepare_message(msg))
     
-
 def process_message(client_t, msg):
     if type(msg) == str:
         msg = bytes(msg, 'utf8')
@@ -72,7 +71,6 @@ def process_message(client_t, msg):
     # checking timestamp
     check_timestamp(ts)
     return (prefix, msg)
-
 
 "Handle client connection"
 def accept_incoming_connections():
@@ -149,7 +147,6 @@ def start_client_loop(client_t):
 
 "Sending a message to every channel members"
 def broadcast(msg, channel, prefix=""):
-    
     for client_t in channel.values():
         send_to_client(client_t['client'], prefix+msg)
 
@@ -191,7 +188,6 @@ def leave_channel(params, client_t):
             msg += "He/she was the owner. The new owner is %s." % new_owner['name']
         broadcast(msg, channels[channel_to_check]['members'])
 
-
 def list_channels(params, client_t):
     result = ''
     if len(channels) == 0:
@@ -212,19 +208,26 @@ def list_channel_members(channel, client_t):
             result += '%s\n' % member['name']
     send_to_client(client_t['client'], result) 
 
-
 def check_password(channel, client_t):
-    send_to_client(client_t['client'], '/pw_required')
-    _, msg = process_message(client_t, client_t['client'].recv(BUFSIZ))
-    send_to_client(channel['owner']['client'], msg)
-    _, answer = process_message(channel['owner']['client'], channel['owner']['client'].recv(BUFSIZ))
+    channel_owner_t = channel['owner']
+
+    owner_key_s = channel_owner_t['enc_key'].exportKey(format='DER')
+    req_msg = '/pw_required %s' % owner_key_s
+    send_to_client(client_t['client'],  req_msg)
+
+    # Ezt a részt kell még ellenőrizni
+
+    pw_msg = client_t['client'].recv(BUFSIZ)
+    _, msg = process_message(client_t, pw_msg)
+    send_to_client(channel_owner_t['client'], msg)
+    pw_valid_msg = channel_owner_t['client'].recv(BUFSIZ)
+    _, answer = process_message(channel_owner_t, pw_valid_msg)
     prefix = answer.split(b' ')[0]
     if prefix == b'/channel_key':
         return True
     else:
         return False
     
-
 def join_channel(channel, client_t):
     # leave channel before joining another one
     if client_t['channel'] != None:
@@ -242,7 +245,7 @@ def join_channel(channel, client_t):
             else:
                 send_to_client(client_t['client'], "Wrong password!")
         else:
-            send_to_client(client_t['client'], '/no_pw_required')
+            send_to_client(client_t['client'], '/no_pw_required %s' % channels[channel]['owner']['enc_key'])
             channels[channel]['members'][client_t['name']] = client_t
             client_t['channel'] = channel
             send_to_client(client_t['client'], 'You are now in the channel \"%s\"' % channel) 
@@ -273,12 +276,14 @@ def quit_app(params, client_t):
 def password_on(params, client_t):
     if channels[client_t['channel']]['owner'] == client_t:
         channels[client_t['channel']]['password_protected'] = True
+        send_to_client(client_t['client'], "Password set successfully!")
     else:
         send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
 def password_off(params, client_t):
     if channels[client_t['channel']]['owner'] == client_t:
         channels[client_t['channel']]['password_protected'] = False
+        send_to_client(client_t['client'], "Password turned off for this channel!")
     else:
         send_to_client(client_t['client'], "You need to be channel owner to do that!")
 

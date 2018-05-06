@@ -77,9 +77,8 @@ def prepare_msg(msg, enc, client_public_enckey=None):
     signature = rsa_sign(signing_key, b)
     return b+signature
 
-def key_request(channel, pw):
-    enckey = get_pubkey_of_channel_owner(channel, 'enc')
-    send_to_server("/key_request " + my_name + ' ' + channel + ' ' + pw, 'client_assym', enckey)
+def key_request(channel, pw, enckey):
+    send_to_server("/key_request %s %s %s" % (my_name, channel, pw), 'client_assym', enckey)
     Debug("Key request sent")
     prefix, _, response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
     if prefix == b'/channel_key':
@@ -101,7 +100,6 @@ def key_response(channel, client, pw):
         
 
 def get_pubkey_of_channel_owner(channel, keytype='sign'):
-    # If pubkey_request is sent without client name, the server will send back the channel owner's key
     if keytype == 'enc':
         send_to_server("/enc_pubkey_request_owner " + channel, enc='server')
     else:
@@ -127,8 +125,8 @@ def process_msg_from_server(msg):
         return sender + b': ' + msg
     if msg.startswith(b'/key_request'):
         _, sender, msg = process_msg_from_client(msg)
-        channel, pw = msg.split[b' '][0:2]
-        key_response(channel, sender, password)
+        channel, pw = msg.split(b' ')[0:2]
+        key_response(channel, sender, pw)
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     # verify signature
@@ -169,8 +167,10 @@ def receive():
             msg = client_socket.recv(BUFSIZ)
             msg = process_msg_from_server(msg)
             global global_message
+            global waiting_for_message
             if waiting_for_message:
                 global_message = msg
+                waiting_for_message = False
             else:
                 if msg != b'':
                     msg = msg.decode('utf8')
@@ -186,17 +186,28 @@ def join_channel(channel, msg):
     global channel_key
     client_socket.send(prepare_msg(msg, 'server'))
     waiting_for_message = True 
-    sleep(0.1)
-    pw_msg = global_message
+    while waiting_for_message:
+        # Itt várakozik valamiért folyamatosan, pedig az üzenetet elküldjük a szervertől
+        sleep(0.1)
+    pw_req_msg = global_message
     waiting_for_message = False
-    if pw_msg == b'/pw_required':
-        pw = input('Enter password:')
+    
+    pw_req_msg_parts = pw_req_msg.split(b' ')
+    command_b = pw_req_msg_parts[0]
+    print(command_b.decode('utf8'))
+    owner_key_b = pw_req_msg_parts[1:]
+    owner_key_s = owner_key_b.decode('utf8')
+    print(owner_key_s)
+    owner_key = RSA.importKey(owner_key_s)
+
+    if command_b == b'/pw_required':
+        pw = input('Enter password: ')        
         try:
-            key_request(channel, password)
+            key_request(channel, pw, owner_key)
         except WrongPassword:
             print('Cannot join channel, wrong password')
-    else:
-        key_request(channel, '')  # If there is no password, an empty string will let you in
+    elif command_b == b'/no_pw_required':
+        key_request(channel, '', owner_key)  # If there is no password, an empty string will let you in
 
 def send(msg, event=None):
     msg_parts = msg.split(' ')

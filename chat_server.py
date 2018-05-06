@@ -55,7 +55,7 @@ def process_message(client_t, msg):
     prefix = msg_list[0]
     Debug(prefix)
     msg = b' '.join(msg_list[1:])
-    if prefix in [b'/message']:  # Message is encrypted with client keys, server cannot perform any more processing
+    if prefix in [b'/message', b'/key_request']:  # Message is encrypted with client keys, server cannot perform any more processing
         return (prefix, msg)
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
@@ -216,13 +216,12 @@ def check_password(channel, client_t):
     req_msg = b'/pw_required ' + owner_key_s
     send_to_client(client_t['client'],  req_msg)
     Debug("Password request sent to client")
-    Debug(req_msg)
 
     # Ezt a részt kell még ellenőrizni
 
     pw_msg = client_t['client'].recv(BUFSIZ)
-    _, msg = process_message(client_t, pw_msg)
-    send_to_client(channel_owner_t['client'], msg)
+    prefix, msg = process_message(client_t, pw_msg)
+    send_to_client(channel_owner_t['client'], prefix + b' ' + bytes(client_t['name'], 'utf8') + b' ' + msg)
     pw_valid_msg = channel_owner_t['client'].recv(BUFSIZ)
     _, answer = process_message(channel_owner_t, pw_valid_msg)
     prefix = answer.split(b' ')[0]

@@ -79,7 +79,6 @@ def prepare_msg(msg, enc, client_public_enckey=None):
 
 def key_request(channel, pw, enckey):
     send_to_server("/key_request %s %s %s" % (my_name, channel, pw), 'client_assym', enckey)
-    Debug("Key request sent")
     prefix, _, response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
     if prefix == b'/channel_key':
         # cut down prefix and name
@@ -88,9 +87,10 @@ def key_request(channel, pw, enckey):
 
 
 def key_response(channel, client, pw): 
+    Debug("Key response function called")
     enckey = get_pubkey_of_client(client, 'enc')
     if pw == password:
-        msg = prepare_msg("/channel_key " + my_name + " " + channel_key, enc='assym', client_public_enckey=enckey)
+        msg = prepare_msg("/channel_key " + channel_key, enc='assym', client_public_enckey=enckey)
         client_socket.send(msg)
     else:
         msg = prepare_msg("/wrong_pw " + my_name, enc='assym', client_public_enckey=enckey)
@@ -119,34 +119,32 @@ def get_pubkey_of_client(client, keytype='sign'):
 
 def process_msg_from_server(msg):
     # getting signature from the end of message
-    Debug("Started processing message %s" % msg)
     if msg.startswith(b'/message'):
         sleep(0.1)
         _, sender, msg = process_msg_from_client(msg)
         return sender + b': ' + msg
     if msg.startswith(b'/key_request'):
-        _, sender, msg = process_msg_from_client(msg)
+        _, sender, msg = process_msg_from_client(msg, enc='assym')
         channel, pw = msg.split(b' ')[0:2]
         key_response(channel, sender, pw)
+        return b''
     sign = msg[-RSA_sign_length:]
     msg = msg[:-RSA_sign_length]
     # verify signature
     rsa_verify(server_public_signkey, msg, sign)
-    Debug("Message verified")
     # getting timestamp from the end of message
-    Debug("Message after signature verifying: %s" % msg)
     ts = msg[-timestamp_length:]
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
-    Debug("Timestamp checked")
     if msg.startswith(b'/no_pw_required'):
         return b''
-    Debug("Finished processing message %s" % msg)
     return msg
 
 def process_msg_from_client(msg, enc='sym'):
     msg_parts = msg.split(b' ')
+    Debug("Process_msg_from_client")
+    Debug(msg)
     prefix, sender = msg_parts[0:2]
     sender = sender.decode('utf8')
     msg = b' '.join(msg_parts[2:])
@@ -154,6 +152,7 @@ def process_msg_from_client(msg, enc='sym'):
     msg = msg[:-RSA_sign_length]
     sender_pubkey = get_pubkey_of_client(sender)
     rsa_verify(sender_pubkey, msg, sign)
+    Debug("Message verified correctly")
     if enc=='assym':
         sender_enc_pubkey_str = get_pubkey_of_client(sender, keytype='enc')
         msg = rsa_dec(sender_enc_pubkey_str, msg)
@@ -169,22 +168,23 @@ def process_msg_from_client(msg, enc='sym'):
 def receive():
     while True:
         try:
-            Debug("Before recieve")
             msg = client_socket.recv(BUFSIZ)
-            Debug("After recieve")
+            Debug(msg)
             msg = process_msg_from_server(msg)
             global global_message
             global waiting_for_message
-            Debug(waiting_for_message)
             if waiting_for_message:
                 global_message = msg
-                Debug(msg)
+                Debug("global msg")
                 waiting_for_message = False
             else:
                 if msg != b'':
+                    Debug("real message")
                     msg = msg.decode('utf8')
                     messages.append(msg)
                     print_messages()
+                else:
+                    Debug("empty msg")
         except OSError:
             break
         except (InvalidTimestampError, WrongSignatureError):
@@ -197,7 +197,6 @@ def join_channel(channel, msg):
     waiting_for_message = True 
     while waiting_for_message:
         # Itt várakozik valamiért folyamatosan, pedig az üzenetet elküldjük a szervertől
-        Debug("Waiting...")
         sleep(0.1)
     pw_req_msg = global_message
     waiting_for_message = False

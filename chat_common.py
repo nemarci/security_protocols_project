@@ -91,9 +91,6 @@ class InvalidTimestampError(ValueError):
 def check_timestamp(ts):
     current_ts = round(datetime.timestamp(datetime.now()))
     difference = current_ts - read_timestamp(ts)
-    Debug("Current time: %s" % hex(current_ts))
-    Debug("Message time: %s" % hex(read_timestamp(ts)))
-    Debug("Time difference: %d" % difference)
     if difference < 0 or difference > delay_limit:
         raise InvalidTimestampError(difference)
 

@@ -283,6 +283,7 @@ def password_off(params, client_t):
         send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
 def pubkey_request(params, client_t):
+    Debug(sign_keys)
     send_to_client(client_t['client'], sign_keys[params].exportKey(format='DER'))
     Debug("Pubkey sent to client %s" % client_t['name'])
 

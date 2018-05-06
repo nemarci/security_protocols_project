@@ -79,7 +79,7 @@ def prepare_msg(msg, enc, client_public_enckey=None):
 
 def key_request(channel, pw):
     enckey = get_pubkey_of_channel_owner(channel, 'enc')
-    send_to_server("/key_request " + name + ' ' + channel + ' ' + pw, 'client_assym', enckey)
+    send_to_server("/key_request " + my_name + ' ' + channel + ' ' + pw, 'client_assym', enckey)
     Debug("Key request sent")
     prefix, _, response = process_msg_from_client(client_socket.recv(BUFSIZ), 'assym')
     if prefix == b'/channel_key':
@@ -91,10 +91,10 @@ def key_request(channel, pw):
 def key_response(channel, client, pw): 
     enckey = get_pubkey_of_client(client, 'enc')
     if pw == password:
-        msg = prepare_msg("/channel_key " + name + " " + channel_key, enc='assym', client_public_enckey=enckey)
+        msg = prepare_msg("/channel_key " + my_name + " " + channel_key, enc='assym', client_public_enckey=enckey)
         client_socket.send(msg)
     else:
-        msg = prepare_msg("/wrong_pw " + name, enc='assym', client_public_enckey=enckey)
+        msg = prepare_msg("/wrong_pw " + my_name, enc='assym', client_public_enckey=enckey)
         client_socket.send(msg)
         raise WrongPassword
         
@@ -211,6 +211,7 @@ def send(msg, event=None):
             result = prepare_msg(result, 'server')
     else:
         global password
+        global my_name
         if msg_parts[0] in available_commands:
             result = prepare_msg(msg, 'server')
             if msg_parts[0] == '/create_channel':
@@ -231,6 +232,8 @@ def send(msg, event=None):
                 join_channel(msg_parts[1], msg)
             if msg_parts[0] == '/message':
                 result = prepare_msg(msg, 'client_sym')
+            if msg_parts[0] == '/send_name':
+                my_name = msg_parts[1]
         else:
             result = '/message %s' % msg        
             result = prepare_msg(result, 'client_sym')

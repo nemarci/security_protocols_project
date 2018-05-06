@@ -41,6 +41,7 @@ def prepare_message(msg):
         pass
     else:
         msg += timestamp()
+        Debug("Timestamp at the end of message: %s" % msg)
         msg += rsa_sign(signing_key, msg)
     return msg
 
@@ -212,8 +213,10 @@ def check_password(channel, client_t):
     channel_owner_t = channel['owner']
 
     owner_key_s = channel_owner_t['enc_key'].exportKey(format='DER')
-    req_msg = '/pw_required %s' % owner_key_s
+    req_msg = b'/pw_required ' + owner_key_s
     send_to_client(client_t['client'],  req_msg)
+    Debug("Password request sent to client")
+    Debug(req_msg)
 
     # Ezt a részt kell még ellenőrizni
 

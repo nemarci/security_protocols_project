@@ -119,6 +119,7 @@ def get_pubkey_of_client(client, keytype='sign'):
 
 def process_msg_from_server(msg):
     # getting signature from the end of message
+    Debug("Started processing message %s" % msg)
     if msg.startswith(b'/message'):
         sleep(0.1)
         _, sender, msg = process_msg_from_client(msg)
@@ -131,13 +132,17 @@ def process_msg_from_server(msg):
     msg = msg[:-RSA_sign_length]
     # verify signature
     rsa_verify(server_public_signkey, msg, sign)
+    Debug("Message verified")
     # getting timestamp from the end of message
+    Debug("Message after signature verifying: %s" % msg)
     ts = msg[-timestamp_length:]
     msg = msg[:-timestamp_length]
     # checking timestamp
     check_timestamp(ts)
+    Debug("Timestamp checked")
     if msg.startswith(b'/no_pw_required'):
         return b''
+    Debug("Finished processing message %s" % msg)
     return msg
 
 def process_msg_from_client(msg, enc='sym'):
@@ -164,12 +169,16 @@ def process_msg_from_client(msg, enc='sym'):
 def receive():
     while True:
         try:
+            Debug("Before recieve")
             msg = client_socket.recv(BUFSIZ)
+            Debug("After recieve")
             msg = process_msg_from_server(msg)
             global global_message
             global waiting_for_message
+            Debug(waiting_for_message)
             if waiting_for_message:
                 global_message = msg
+                Debug(msg)
                 waiting_for_message = False
             else:
                 if msg != b'':
@@ -188,6 +197,7 @@ def join_channel(channel, msg):
     waiting_for_message = True 
     while waiting_for_message:
         # Itt várakozik valamiért folyamatosan, pedig az üzenetet elküldjük a szervertől
+        Debug("Waiting...")
         sleep(0.1)
     pw_req_msg = global_message
     waiting_for_message = False
@@ -195,10 +205,9 @@ def join_channel(channel, msg):
     pw_req_msg_parts = pw_req_msg.split(b' ')
     command_b = pw_req_msg_parts[0]
     print(command_b.decode('utf8'))
-    owner_key_b = pw_req_msg_parts[1:]
-    owner_key_s = owner_key_b.decode('utf8')
-    print(owner_key_s)
-    owner_key = RSA.importKey(owner_key_s)
+    owner_key_b = b' '.join(pw_req_msg_parts[1:])
+    print(owner_key_b)
+    owner_key = RSA.importKey(owner_key_b)
 
     if command_b == b'/pw_required':
         pw = input('Enter password: ')        

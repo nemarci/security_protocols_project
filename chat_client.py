@@ -192,11 +192,11 @@ def join_channel(channel, msg):
     if pw_msg == b'/pw_required':
         pw = input('Enter password:')
         try:
-            channel_key = key_request(channel, password)
+            key_request(channel, password)
         except WrongPassword:
             print('Cannot join channel, wrong password')
     else:
-        channel_key = key_request(channel, '')  # If there is no password, an empty string will let you in
+        key_request(channel, '')  # If there is no password, an empty string will let you in
 
 def send(msg, event=None):
     msg_parts = msg.split(' ')

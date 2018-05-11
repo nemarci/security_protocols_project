@@ -221,7 +221,11 @@ def check_password(channel, client_t):
 
     pw_msg = client_t['client'].recv(BUFSIZ)
     prefix, msg = process_message(client_t, pw_msg)
-    send_to_client(channel_owner_t['client'], prefix + b' ' + bytes(client_t['name'], 'utf8') + b' ' + msg)
+    # Ebbe kéne belerakni a client publikus kulcsát!
+
+    client_key_s = client_t['enc_key'].exportKey(format='DER')
+
+    send_to_client(channel_owner_t['client'], prefix + b' ' + bytes(client_t['name'], 'utf8') + b' ' + bytes(client_t['enc_key'], 'utf8') + b' ' + msg)
     pw_valid_msg = channel_owner_t['client'].recv(BUFSIZ)
     _, answer = process_message(channel_owner_t, pw_valid_msg)
     prefix = answer.split(b' ')[0]
@@ -266,7 +270,7 @@ def send_message(msg, client_t):
         send_to_client(client_t['client'], 'You have to be in a channel to access this function!')
 
 def quit_app(params, client_t):
-    print("%s has quit" % client_t['name'])
+    print("%s started quit" % client_t['name'])
     send_to_client(client_t['client'], '/quit')
     client_t['client'].close()
     del clients[client_t['client']]
@@ -274,6 +278,7 @@ def quit_app(params, client_t):
         broadcast('%s disconnected' % client_t['name'], channels[client_t['channel']]['members'])
         del channels[client_t['channel']]['members'][client_t['name']]
     del client_t
+    print("Player has been removed from the db")
 
 def password_on(params, client_t):
     if channels[client_t['channel']]['owner'] == client_t:
@@ -289,20 +294,18 @@ def password_off(params, client_t):
     else:
         send_to_client(client_t['client'], "You need to be channel owner to do that!")
 
-def pubkey_request(params, client_t):
+def pubkey_request(client, client_t):
     Debug(sign_keys)
-    send_to_client(client_t['client'], sign_keys[params].exportKey(format='DER'))
+    send_to_client(client_t['client'], sign_keys[client].exportKey(format='DER'))
     Debug("Pubkey sent to client %s" % client_t['name'])
 
-def enc_pubkey_request(params, client_t):
-    send_to_client(client_t['client'], enc_keys[params].exportKey(format='DER'))
+def enc_pubkey_request(client, client_t):
+    send_to_client(client_t['client'], enc_keys[client].exportKey(format='DER'))
 
-def pubkey_request_owner(params, client_t):
-    channel = params
+def pubkey_request_owner(channel, client_t):
     send_to_client(client_t['client'], channels[channel]['owner']['sign_key'].exportKey(format='DER'))
     
-def enc_pubkey_request_owner(params, client_t):
-    channel = params
+def enc_pubkey_request_owner(channel, client_t):
     send_to_client(client_t['client'], channels[channel]['owner']['enc_key'].exportKey(format='DER'))
     
 

@@ -3,7 +3,7 @@ from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 from chat_common import *
 import os
-import sys
+from sys import exit
 from time import sleep
 
 
@@ -110,6 +110,7 @@ def get_pubkey_of_channel_owner(channel, keytype='sign'):
     
 def get_pubkey_of_client(client, keytype='sign'):
     if keytype=='enc':
+        Debug('Get pubkey of client (enc)')
         send_to_server("/enc_pubkey_request " + client, enc='server')
     else:
         send_to_server("/pubkey_request " + client, enc='server')
@@ -118,6 +119,9 @@ def get_pubkey_of_client(client, keytype='sign'):
     return client_pubkey
 
 def process_msg_from_server(msg):
+    if msg.startswith(b'/quit'):
+        client_socket.close()
+        exit()
     # getting signature from the end of message
     if msg.startswith(b'/message'):
         sleep(0.1)
@@ -155,12 +159,14 @@ def process_msg_from_client(msg, enc='sym'):
     Debug("Message verified correctly")
     if enc=='assym':
         sender_enc_pubkey_str = get_pubkey_of_client(sender, keytype='enc')
+        Debug('Enc key obtained')
         msg = rsa_dec(sender_enc_pubkey_str, msg)
     else:
         msg = aes_dec(channel_key, msg)
     ts = msg[-timestamp_length:]
     msg = msg[:-timestamp_length]
     check_timestamp(ts)
+    Debug("már mindjárt vége")
     sender = bytes(sender, 'utf8')
     return (prefix, sender, msg)
 
@@ -196,16 +202,13 @@ def join_channel(channel, msg):
     client_socket.send(prepare_msg(msg, 'server'))
     waiting_for_message = True 
     while waiting_for_message:
-        # Itt várakozik valamiért folyamatosan, pedig az üzenetet elküldjük a szervertől
         sleep(0.1)
     pw_req_msg = global_message
     waiting_for_message = False
     
     pw_req_msg_parts = pw_req_msg.split(b' ')
     command_b = pw_req_msg_parts[0]
-    print(command_b.decode('utf8'))
     owner_key_b = b' '.join(pw_req_msg_parts[1:])
-    print(owner_key_b)
     owner_key = RSA.importKey(owner_key_b)
 
     if command_b == b'/pw_required':
@@ -260,27 +263,12 @@ def send(msg, event=None):
         if type(result) == str:
             result = bytes(result, 'utf8') 
         client_socket.send(result)
-
-    if msg == '/quit':
-        client_socket.close()
-        sys.exit()
         
 
 def print_messages():
     clear()
     for msg in messages:
         print(msg)
-
-
-# Encoding/decoding related methods
-
-def encode_msg(msg):
-    print("encoding the msg...")
-    return msg
-
-def decode_msg(msg):
-    print("decoding the msg...")
-    return msg
 
 
 "Application startup requires the user to type in the server's address and port"
@@ -309,3 +297,6 @@ while True:
     msg_to_send = input()
     if (msg_to_send != ''):
         send(msg_to_send)
+        if (msg_to_send == '/quit'):
+            break
+    
